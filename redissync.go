@@ -54,8 +54,9 @@ func (s *RedisSync) Lock() {
 	}
 	var start = time.Now()
 	var err error
+	var conn = s.Pool.Get()
 	for time.Since(start) < s.Timeout {
-		_, err = redis.String(s.Pool.Get().Do("SET", s.LockKey, s.Token, "NX", "PX", int(s.Expiry/time.Millisecond)))
+		_, err = redis.String(conn.Do("SET", s.LockKey, s.Token, "NX", "PX", int(s.Expiry/time.Millisecond)))
 		if err == nil {
 			s.ErrChan <- nil
 			return
