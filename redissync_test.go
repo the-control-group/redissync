@@ -14,6 +14,7 @@ var dbIndex = 15
 
 var pool = &redis.Pool{
 	MaxIdle:     3,
+	Wait:        true,
 	IdleTimeout: 240 * time.Second,
 	Dial: func() (redis.Conn, error) {
 		var server = redisAddr
@@ -48,7 +49,7 @@ func TestRedisSync_IntendedUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error flushing database")
 	}
-	rs := &RedisSync{Key: "special flower", Pool: pool, ErrChan: make(chan error, 1)}
+	rs := &RedisSync{Key: "special flower", Pool: pool, ErrChan: make(chan error, 1), Timeout: 1 * time.Second}
 	rs.Lock()
 	err = <-rs.ErrChan
 	if err != nil {
@@ -85,13 +86,13 @@ func TestRedisSync_ErrTryingToUnlockKeyOwnedByAnotherLocker(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error setting key to test", err)
 	}
-	rs1 := &RedisSync{Key: "special flower", Pool: pool, Token: "token1", ErrChan: make(chan error, 1)}
+	rs1 := &RedisSync{Key: "special flower", Pool: pool, Token: "token1", ErrChan: make(chan error, 1), Timeout: 1 * time.Second}
 	rs1.Lock()
 	err = <-rs1.ErrChan
 	if err != nil {
 		t.Fatal("failed to obtain lock", err)
 	}
-	rs2 := &RedisSync{Key: "special flower", Pool: pool, Token: "token2", ErrChan: make(chan error, 1)}
+	rs2 := &RedisSync{Key: "special flower", Pool: pool, Token: "token2", ErrChan: make(chan error, 1), Timeout: 1 * time.Second}
 	rs2.Unlock()
 	err = <-rs2.ErrChan
 	if err == nil {
@@ -109,7 +110,7 @@ func TestRedisSync_ErrTryingToObtainLock(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error setting key to test", err)
 	}
-	rs1 := &RedisSync{Key: "special flower", Pool: pool, Token: "token1", ErrChan: make(chan error, 1)}
+	rs1 := &RedisSync{Key: "special flower", Pool: pool, Token: "token1", ErrChan: make(chan error, 1), Timeout: 1 * time.Second}
 	rs1.Lock()
 	err = <-rs1.ErrChan
 	if err != nil {
