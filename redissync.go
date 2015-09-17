@@ -55,6 +55,7 @@ func (s *RedisSync) Lock() {
 	var start = time.Now()
 	var err error
 	var conn = s.Pool.Get()
+	defer conn.Close()
 	var tries = 0
 	for tries == 0 || time.Since(start) < s.Timeout {
 		tries++
@@ -71,7 +72,9 @@ func (s *RedisSync) Lock() {
 }
 
 func (s *RedisSync) Unlock() {
-	_, err := unlockScript.Do(s.Pool.Get(), s.LockKey, s.Token)
+	var conn = s.Pool.Get()
+	defer conn.Close()
+	_, err := unlockScript.Do(conn, s.LockKey, s.Token)
 	if err != nil && s.ErrChan != nil {
 		s.ErrChan <- errors.New(fmt.Sprintf(ErrUnownedLock, s.Key))
 	} else {
