@@ -20,6 +20,7 @@ var ErrUnownedLock = "Attempted to unlock a key owned by another locker: %s"
 
 // TODO Check to see if key even exists in unlock script and return different error
 // TODO Create list of tokens in redis to make sure they get a unique one, and not let them pass one in
+// TODO Handle redis connection internally instead of requiring pool
 
 var unlockScript = redis.NewScript(1, "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('DEL',KEYS[1]) else return {err='Token does not match'} end")
 
