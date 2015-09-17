@@ -98,3 +98,27 @@ func TestRedisSync_ErrTryingToUnlockKeyOwnedByAnotherLocker(t *testing.T) {
 		t.Fatal("should have failed to unlock key", rs1.Key, err)
 	}
 }
+
+// Error trying to obtain lock
+func TestRedisSync_ErrTryingToObtainLock(t *testing.T) {
+	_, err := pool.Get().Do("FLUSHDB")
+	if err != nil {
+		t.Fatal("Error flushing database", err)
+	}
+	_, err = pool.Get().Do("SET", "special flower", "super delicate")
+	if err != nil {
+		t.Fatal("Error setting key to test", err)
+	}
+	rs1 := &RedisSync{Key: "special flower", Pool: pool, Token: "token1", ErrChan: make(chan error, 1)}
+	rs1.Lock()
+	err = <-rs1.ErrChan
+	if err != nil {
+		t.Fatal("failed to obtain lock", err)
+	}
+	rs2 := &RedisSync{Key: "special flower", Pool: pool, Token: "token2", ErrChan: make(chan error, 1), Timeout: 1 * time.Millisecond}
+	rs2.Lock()
+	err = <-rs2.ErrChan
+	if err == nil {
+		t.Fatal("should have failed to obtain lock", rs1.Key, err)
+	}
+}
