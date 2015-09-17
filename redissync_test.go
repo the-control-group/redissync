@@ -4,7 +4,6 @@ import (
 	"os"
 
 	"github.com/garyburd/redigo/redis"
-	//"github.com/the-control-group/split-testing-service/pkg/db/redissync"
 	"testing"
 	"time"
 )
@@ -49,8 +48,12 @@ func TestRedisSync_IntendedUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error flushing database")
 	}
-	rs := &RedisSync{Key: "special flower", Pool: pool}
+	rs := &RedisSync{Key: "special flower", Pool: pool, ErrChan: make(chan error, 1)}
 	rs.Lock()
+	err = <-rs.ErrChan
+	if err != nil {
+		t.Fatal("failed to obtain lock", err)
+	}
 	exists, err := redis.Bool(pool.Get().Do("EXISTS", "special flower.lock"))
 	if err != nil {
 		t.Fatal("eror checking if lock key exists")
@@ -58,7 +61,8 @@ func TestRedisSync_IntendedUsage(t *testing.T) {
 	if exists == false {
 		t.Fatal("lock key doesn't exist after lock")
 	}
-	err = rs.Unlock()
+	rs.Unlock()
+	err = <-rs.ErrChan
 	if err != nil {
 		t.Fatal("failed to unlock key", rs.Key, err)
 	}
@@ -81,10 +85,15 @@ func TestRedisSync_ErrTryingToUnlockKeyOwnedByAnotherLocker(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error setting key to test", err)
 	}
-	rs1 := &RedisSync{Key: "special flower", Pool: pool, Token: "token1"}
+	rs1 := &RedisSync{Key: "special flower", Pool: pool, Token: "token1", ErrChan: make(chan error, 1)}
 	rs1.Lock()
-	rs2 := &RedisSync{Key: "special flower", Pool: pool, Token: "token2"}
-	err = rs2.Unlock()
+	err = <-rs1.ErrChan
+	if err != nil {
+		t.Fatal("failed to obtain lock", err)
+	}
+	rs2 := &RedisSync{Key: "special flower", Pool: pool, Token: "token2", ErrChan: make(chan error, 1)}
+	rs2.Unlock()
+	err = <-rs2.ErrChan
 	if err == nil {
 		t.Fatal("should have failed to unlock key", rs1.Key, err)
 	}

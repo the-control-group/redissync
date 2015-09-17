@@ -1,8 +1,8 @@
 package redissync
 
 import (
+	"errors"
 	"fmt"
-	"log"
 	"math/rand"
 	"time"
 
@@ -18,6 +18,9 @@ const (
 var ErrObtainingLock = "Unable to obtain lock in %d retries with %d millisecond delay"
 var ErrUnownedLock = "Attempted to unlock a key owned by another locker: %s"
 
+// TODO Check to see if key even exists in unlock script and return different error
+// TODO Create list of tokens in redis to make sure they get a unique one, and not let them pass one in
+
 var unlockScript = redis.NewScript(1, "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('DEL',KEYS[1]) else return {err='Token does not match'} end")
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -30,6 +33,7 @@ type RedisSync struct {
 	Retries int // Use -1 for no limit
 	Delay   time.Duration
 	Token   string // the value of the lock key used to make sure only this locker can unlock it. will generate random string if one is not supplied.
+	ErrChan chan error
 }
 
 func (s *RedisSync) Lock() {
@@ -49,22 +53,25 @@ func (s *RedisSync) Lock() {
 		s.Token = generateToken(10)
 	}
 	for i := 0; i < s.Retries; i++ {
-		v, err := s.Pool.Get().Do("SET", s.LockKey, s.Token, "NX", "PX", int(s.Expiry/time.Millisecond))
+		_, err := s.Pool.Get().Do("SET", s.LockKey, s.Token, "NX", "PX", int(s.Expiry/time.Millisecond))
 		if err == nil {
+			s.ErrChan <- nil
 			return
 		}
-		println(v)
 		time.Sleep(s.Delay)
 	}
-	log.Panicf(ErrObtainingLock, s.Retries, s.Delay/time.Millisecond)
+	if s.ErrChan != nil {
+		s.ErrChan <- errors.New(fmt.Sprintf(ErrObtainingLock, s.Retries, s.Delay))
+	}
 }
 
-func (s *RedisSync) Unlock() error {
+func (s *RedisSync) Unlock() {
 	_, err := unlockScript.Do(s.Pool.Get(), s.LockKey, s.Token)
-	if err != nil {
-		err = fmt.Errorf(ErrUnownedLock, s.LockKey)
+	if err != nil && s.ErrChan != nil {
+		s.ErrChan <- errors.New(fmt.Sprintf(ErrUnownedLock))
+	} else {
+		s.ErrChan <- nil
 	}
-	return err
 }
 
 func getLockKey(key string) string {
