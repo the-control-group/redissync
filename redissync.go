@@ -11,16 +11,15 @@ import (
 
 const (
 	DefaultExpiry  = 5 * time.Second
-	DefaultRetries = 16
+	DefaultTimeout = 6 * time.Second
 	DefaultDelay   = 50 * time.Millisecond
 )
 
-var ErrObtainingLock = "Unable to obtain lock in %d retries with %d millisecond delay"
+var ErrObtainingLock = "Unable to obtain lock in %d timeout with %d millisecond delay"
 var ErrUnownedLock = "Attempted to unlock a key owned by another locker: %s"
 
 // TODO Check to see if key even exists in unlock script and return different error
 // TODO Create list of tokens in redis to make sure they get a unique one, and not let them pass one in
-// TODO Handle redis connection internally instead of requiring pool
 
 var unlockScript = redis.NewScript(1, "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('DEL',KEYS[1]) else return {err='Token does not match'} end")
 
@@ -31,7 +30,7 @@ type RedisSync struct {
 	LockKey string
 	Pool    *redis.Pool
 	Expiry  time.Duration
-	Retries int // Use -1 for no limit
+	Timeout time.Duration // Use 0 for no timeout
 	Delay   time.Duration
 	Token   string // the value of the lock key used to make sure only this locker can unlock it. will generate random string if one is not supplied.
 	ErrChan chan error
@@ -41,8 +40,8 @@ func (s *RedisSync) Lock() {
 	if s.LockKey == "" {
 		s.LockKey = getLockKey(s.Key)
 	}
-	if s.Retries == 0 {
-		s.Retries = DefaultRetries
+	if s.Timeout == 0 {
+		s.Timeout = DefaultTimeout
 	}
 	if s.Delay == 0 {
 		s.Delay = DefaultDelay
@@ -53,7 +52,8 @@ func (s *RedisSync) Lock() {
 	if s.Token == "" {
 		s.Token = generateToken(10)
 	}
-	for i := 0; i < s.Retries; i++ {
+	var start = time.Now()
+	for time.Since(start) < s.Timeout {
 		_, err := s.Pool.Get().Do("SET", s.LockKey, s.Token, "NX", "PX", int(s.Expiry/time.Millisecond))
 		if err == nil {
 			s.ErrChan <- nil
@@ -62,7 +62,7 @@ func (s *RedisSync) Lock() {
 		time.Sleep(s.Delay)
 	}
 	if s.ErrChan != nil {
-		s.ErrChan <- errors.New(fmt.Sprintf(ErrObtainingLock, s.Retries, s.Delay))
+		s.ErrChan <- errors.New(fmt.Sprintf(ErrObtainingLock, s.Timeout, s.Delay))
 	}
 }
 
