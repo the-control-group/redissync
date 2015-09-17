@@ -15,7 +15,7 @@ const (
 	DefaultDelay   = 50 * time.Millisecond
 )
 
-var ErrObtainingLock = "Unable to obtain lock in %d timeout with %d millisecond delay"
+var ErrObtainingLock = "Unable to obtain lock: %s"
 var ErrUnownedLock = "Attempted to unlock a key owned by another locker: %s"
 
 // TODO Check to see if key even exists in unlock script and return different error
@@ -62,14 +62,14 @@ func (s *RedisSync) Lock() {
 		time.Sleep(s.Delay)
 	}
 	if s.ErrChan != nil {
-		s.ErrChan <- errors.New(fmt.Sprintf(ErrObtainingLock, s.Timeout, s.Delay))
+		s.ErrChan <- errors.New(fmt.Sprintf(ErrObtainingLock, s.Key))
 	}
 }
 
 func (s *RedisSync) Unlock() {
 	_, err := unlockScript.Do(s.Pool.Get(), s.LockKey, s.Token)
 	if err != nil && s.ErrChan != nil {
-		s.ErrChan <- errors.New(fmt.Sprintf(ErrUnownedLock))
+		s.ErrChan <- errors.New(fmt.Sprintf(ErrUnownedLock, s.Key))
 	} else {
 		s.ErrChan <- nil
 	}
