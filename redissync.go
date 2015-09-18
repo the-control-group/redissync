@@ -61,7 +61,9 @@ func (s *RedisSync) Lock() {
 		tries++
 		_, err = redis.String(conn.Do("SET", s.LockKey, s.Token, "NX", "PX", int(s.Expiry/time.Millisecond)))
 		if err == nil {
-			s.ErrChan <- nil
+			if s.ErrChan != nil {
+				s.ErrChan <- nil
+			}
 			return
 		}
 		time.Sleep(s.Delay)
@@ -78,7 +80,9 @@ func (s *RedisSync) Unlock() {
 	if err != nil && s.ErrChan != nil {
 		s.ErrChan <- errors.New(fmt.Sprintf(ErrUnownedLock, s.Key))
 	} else {
-		s.ErrChan <- nil
+		if s.ErrChan != nil {
+			s.ErrChan <- nil
+		}
 	}
 }
 
