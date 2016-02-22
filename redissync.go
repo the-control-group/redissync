@@ -34,6 +34,7 @@ type RedisSync struct {
 	Delay   time.Duration
 	Token   string // the value of the lock key used to make sure only this locker can unlock it. will generate random string if one is not supplied.
 	ErrChan chan error
+	HasLock bool
 }
 
 func (s *RedisSync) Lock() {
@@ -69,7 +70,10 @@ func (s *RedisSync) Lock() {
 		time.Sleep(s.Delay)
 	}
 	if s.ErrChan != nil {
+		s.HasLock = false
 		s.ErrChan <- errors.New(fmt.Sprintf(ErrObtainingLock, err.Error(), s.Key))
+	} else {
+		s.HasLock = true
 	}
 }
 
@@ -77,6 +81,7 @@ func (s *RedisSync) Unlock() {
 	var conn = s.Pool.Get()
 	defer conn.Close()
 	_, err := unlockScript.Do(conn, s.LockKey, s.Token)
+	s.HasLock = false
 	if err != nil && s.ErrChan != nil {
 		s.ErrChan <- errors.New(fmt.Sprintf(ErrUnownedLock, s.Key))
 	} else {
