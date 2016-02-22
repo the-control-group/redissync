@@ -25,6 +25,24 @@ var unlockScript = redis.NewScript(1, "if redis.call('get',KEYS[1]) == ARGV[1] t
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
+func Sync(key string, pool *redis.Pool, expiry, timeout, delay time.Duration, fn func() error) (error) {
+	var lockErr error
+	var fnErr error
+	var locker = RedisSync{Key: key, Pool: pool, Expiry: expiry, Timeout: timeout, Delay: delay, ErrChan: make(chan error, 1)}
+	locker.Lock()
+	lockErr = <- locker.ErrChan
+	if lockErr != nil {
+		return lockErr
+	}
+	fnErr = fn()
+	locker.Unlock()
+	lockErr = <- locker.ErrChan
+	if lockErr != nil {
+		return lockErr
+	}
+	return fnErr
+}
+
 type RedisSync struct {
 	Key     string
 	LockKey string
