@@ -23,20 +23,24 @@ var ErrUnownedLock = "Attempted to unlock a key owned by another locker: %s"
 
 var unlockScript = redis.NewScript(1, "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('DEL',KEYS[1]) else return {err='Token does not match'} end")
 
+// var checkScript = redis.NewScript(1, "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('DEL',KEYS[1]) else return {err='Token does not match'} end")
+
+var checkScript = redis.NewScript(1, "if redis.call('get',KEYS[1]) == ARGV[1] then return 'true' else return 'false' end")
+
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
-func Sync(key string, pool *redis.Pool, expiry, timeout, delay time.Duration, fn func() error) (error) {
+func Sync(key string, pool *redis.Pool, expiry, timeout, delay time.Duration, fn func() error) error {
 	var lockErr error
 	var fnErr error
 	var locker = RedisSync{Key: key, Pool: pool, Expiry: expiry, Timeout: timeout, Delay: delay, ErrChan: make(chan error, 1)}
 	locker.Lock()
-	lockErr = <- locker.ErrChan
+	lockErr = <-locker.ErrChan
 	if lockErr != nil {
 		return lockErr
 	}
 	fnErr = fn()
 	locker.Unlock()
-	lockErr = <- locker.ErrChan
+	lockErr = <-locker.ErrChan
 	if lockErr != nil {
 		return lockErr
 	}
@@ -52,7 +56,6 @@ type RedisSync struct {
 	Delay   time.Duration
 	Token   string // the value of the lock key used to make sure only this locker can unlock it. will generate random string if one is not supplied.
 	ErrChan chan error
-	HasLock bool
 }
 
 func (s *RedisSync) Lock() {
@@ -88,10 +91,7 @@ func (s *RedisSync) Lock() {
 		time.Sleep(s.Delay)
 	}
 	if s.ErrChan != nil {
-		s.HasLock = false
 		s.ErrChan <- errors.New(fmt.Sprintf(ErrObtainingLock, err.Error(), s.Key))
-	} else {
-		s.HasLock = true
 	}
 }
 
@@ -99,7 +99,6 @@ func (s *RedisSync) Unlock() {
 	var conn = s.Pool.Get()
 	defer conn.Close()
 	_, err := unlockScript.Do(conn, s.LockKey, s.Token)
-	s.HasLock = false
 	if err != nil && s.ErrChan != nil {
 		s.ErrChan <- errors.New(fmt.Sprintf(ErrUnownedLock, s.Key))
 	} else {
@@ -107,6 +106,16 @@ func (s *RedisSync) Unlock() {
 			s.ErrChan <- nil
 		}
 	}
+}
+
+func (s *RedisSync) HasLock() bool {
+	var conn = s.Pool.Get()
+	defer conn.Close()
+	ans, err := redis.Bool(checkScript.Do(conn, s.LockKey, s.Token))
+	if s.ErrChan != nil {
+		s.ErrChan <- err
+	}
+	return ans
 }
 
 func getLockKey(key string) string {

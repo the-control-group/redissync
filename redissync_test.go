@@ -50,6 +50,7 @@ func TestRedisSync_IntendedUsage(t *testing.T) {
 		t.Fatal("Error flushing database")
 	}
 	rs := &RedisSync{Key: "special flower", Pool: pool, ErrChan: make(chan error, 1), Timeout: 1 * time.Second}
+
 	rs.Lock()
 	err = <-rs.ErrChan
 	if err != nil {
@@ -62,6 +63,16 @@ func TestRedisSync_IntendedUsage(t *testing.T) {
 	if exists == false {
 		t.Fatal("lock key doesn't exist after lock")
 	}
+
+	hasLock := rs.HasLock()
+	err = <-rs.ErrChan
+	if err != nil {
+		t.Fatal("failed to check lock", rs.Key, err)
+	}
+	if !hasLock {
+		t.Fatal("HasLock should return true")
+	}
+
 	rs.Unlock()
 	err = <-rs.ErrChan
 	if err != nil {
@@ -73,6 +84,15 @@ func TestRedisSync_IntendedUsage(t *testing.T) {
 	}
 	if exists == true {
 		t.Fatal("lock key still exist after unlock")
+	}
+
+	hasLock = rs.HasLock()
+	err = <-rs.ErrChan
+	if err != nil {
+		t.Fatal("failed to check lock", rs.Key, err)
+	}
+	if hasLock {
+		t.Fatal("HasLock should return false")
 	}
 }
 
@@ -86,17 +106,37 @@ func TestRedisSync_ErrTryingToUnlockKeyOwnedByAnotherLocker(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error setting key to test", err)
 	}
+
 	rs1 := &RedisSync{Key: "special flower", Pool: pool, Token: "token1", ErrChan: make(chan error, 1), Timeout: 1 * time.Second}
 	rs1.Lock()
 	err = <-rs1.ErrChan
 	if err != nil {
 		t.Fatal("failed to obtain lock", err)
 	}
+
+	hasLock := rs1.HasLock()
+	err = <-rs1.ErrChan
+	if err != nil {
+		t.Fatal("failed to check lock", rs1.Key, err)
+	}
+	if !hasLock {
+		t.Fatal("HasLock should return true")
+	}
+
 	rs2 := &RedisSync{Key: "special flower", Pool: pool, Token: "token2", ErrChan: make(chan error, 1), Timeout: 1 * time.Second}
 	rs2.Unlock()
 	err = <-rs2.ErrChan
 	if err == nil {
 		t.Fatal("should have failed to unlock key", rs1.Key, err)
+	}
+
+	hasLock = rs2.HasLock()
+	err = <-rs2.ErrChan
+	if err != nil {
+		t.Fatal("failed to check lock", rs2.Key, err)
+	}
+	if hasLock {
+		t.Fatal("HasLock should return false")
 	}
 }
 
